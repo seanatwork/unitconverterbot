@@ -1,8 +1,8 @@
 import os
 import re
 import logging
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, InlineQueryHandler, filters, ContextTypes
 from pint import UnitRegistry, UndefinedUnitError, DimensionalityError
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +18,9 @@ Send a message like:
 • `5 feet to meters`
 • `1 mile to km`
 • `500 ml to cups`
+
+You can also use me inline in any chat:
+`@your_bot_name 100 kg to lbs`
 
 /help — show this message
 """
@@ -96,6 +99,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
+async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.inline_query.query.strip()
+    if not query:
+        return
+
+    result = parse_and_convert(query)
+    if result is None:
+        results = [
+            InlineQueryResultArticle(
+                id="help",
+                title="Format: 100 kg to lbs",
+                description="Type a conversion like: 60 mph to kph",
+                input_message_content=InputTextMessageContent("Format: `100 kg to lbs`", parse_mode="Markdown"),
+            )
+        ]
+    else:
+        plain = result.replace("*", "")
+        results = [
+            InlineQueryResultArticle(
+                id="result",
+                title=plain,
+                description=query,
+                input_message_content=InputTextMessageContent(result, parse_mode="Markdown"),
+            )
+        ]
+
+    await update.inline_query.answer(results, cache_time=30)
+
 async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     result = parse_and_convert(text)
@@ -112,6 +143,7 @@ def main():
     app = ApplicationBuilder().token(token).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(InlineQueryHandler(inline_query))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, convert))
     app.run_polling()
 
