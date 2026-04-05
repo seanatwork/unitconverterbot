@@ -95,12 +95,13 @@ def normalize_timezone(tz: str) -> str:
 
 def convert_timezone(text: str) -> str:
     # Pattern for time conversion: "3pm EST to PST", "15:30 GMT to JST", "now UTC to America/New_York"
-    time_pattern = r"^(now|(\d{1,2}):?\d{0,2}\s*(am|pm)?)\s+(.+?)\s+(?:to|in|->|→)\s+(.+)$"
+    # Requires either "now" or a proper time format (HH:MM or H{am/pm}) followed by timezone names
+    time_pattern = r"^(now|\d{1,2}:\d{2}\s*(?:am|pm)?|\d{1,2}\s*(?:am|pm))\s+(.+?)\s+(?:to|in|->|→)\s+(.+)$"
     match = re.match(time_pattern, text.strip(), re.IGNORECASE)
     if not match:
         return None
-    
-    time_str, hour_min, ampm, from_tz, to_tz = match.groups()
+
+    time_str, from_tz, to_tz = match.groups()
     from_tz = normalize_timezone(from_tz.strip())
     to_tz = normalize_timezone(to_tz.strip())
     
@@ -118,8 +119,9 @@ def convert_timezone(text: str) -> str:
         if time_str.lower() == "now":
             now = datetime.now(from_tz_obj)
         else:
-            # Parse the time
-            if ampm:
+            # Determine if AM/PM is present
+            has_ampm = bool(re.search(r'(am|pm)', time_str, re.IGNORECASE))
+            if has_ampm:
                 # Format like "3pm" or "3:30pm"
                 if ":" in time_str:
                     time_format = "%I:%M%p"
