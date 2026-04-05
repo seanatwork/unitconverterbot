@@ -1,9 +1,11 @@
 import os
 import re
 import logging
+from datetime import datetime
 from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, InlineQueryHandler, filters, ContextTypes
 from pint import UnitRegistry, UndefinedUnitError, DimensionalityError
+import pytz
 
 logging.basicConfig(level=logging.INFO)
 ureg = UnitRegistry()
@@ -18,6 +20,9 @@ Send a message like:
 • `5 feet to meters`
 • `1 mile to km`
 • `500 ml to cups`
+• `3pm EST to PST`
+• `15:30 GMT to JST`
+• `now UTC to America/New_York`
 
 You can also use me inline in any chat:
 `@your_bot_name 100 kg to lbs`
@@ -63,10 +68,98 @@ UNIT_ALIASES = {
     "cups": "cup",
 }
 
+TIMEZONE_ALIASES = {
+    "est": "US/Eastern",
+    "edt": "US/Eastern",
+    "pst": "US/Pacific",
+    "pdt": "US/Pacific",
+    "cst": "US/Central",
+    "cdt": "US/Central",
+    "mst": "US/Mountain",
+    "mdt": "US/Mountain",
+    "gmt": "GMT",
+    "utc": "UTC",
+    "bst": "Europe/London",
+    "cet": "Europe/Paris",
+    "jst": "Asia/Tokyo",
+    "ist": "Asia/Kolkata",
+    "aest": "Australia/Sydney",
+    "aedt": "Australia/Sydney",
+}
+
 def normalize(unit: str) -> str:
     return UNIT_ALIASES.get(unit.lower(), unit)
 
+def normalize_timezone(tz: str) -> str:
+    return TIMEZONE_ALIASES.get(tz.lower(), tz)
+
+def convert_timezone(text: str) -> str:
+    # Pattern for time conversion: "3pm EST to PST", "15:30 GMT to JST", "now UTC to America/New_York"
+    time_pattern = r"^(now|(\d{1,2}):?\d{0,2}\s*(am|pm)?)\s+(.+?)\s+(?:to|in|->|→)\s+(.+)$"
+    match = re.match(time_pattern, text.strip(), re.IGNORECASE)
+    if not match:
+        return None
+    
+    time_str, hour_min, ampm, from_tz, to_tz = match.groups()
+    from_tz = normalize_timezone(from_tz.strip())
+    to_tz = normalize_timezone(to_tz.strip())
+    
+    try:
+        # Validate timezones
+        if from_tz not in pytz.all_timezones:
+            return f"Unknown timezone: {from_tz}"
+        if to_tz not in pytz.all_timezones:
+            return f"Unknown timezone: {to_tz}"
+        
+        from_tz_obj = pytz.timezone(from_tz)
+        to_tz_obj = pytz.timezone(to_tz)
+        
+        # Parse time
+        if time_str.lower() == "now":
+            now = datetime.now(from_tz_obj)
+        else:
+            # Parse the time
+            if ampm:
+                # Format like "3pm" or "3:30pm"
+                if ":" in time_str:
+                    time_format = "%I:%M%p"
+                else:
+                    time_format = "%I%p"
+                time_obj = datetime.strptime(time_str.lower(), time_format).time()
+                now = datetime.now(from_tz_obj).replace(hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0)
+            else:
+                # Format like "15:30" or "15"
+                if ":" in time_str:
+                    time_format = "%H:%M"
+                else:
+                    time_format = "%H"
+                time_obj = datetime.strptime(time_str, time_format).time()
+                now = datetime.now(from_tz_obj).replace(hour=time_obj.hour, minute=time_obj.minute, second=0, microsecond=0)
+        
+        # Convert timezone
+        converted_time = now.astimezone(to_tz_obj)
+        
+        # Format result
+        from_time_str = now.strftime("%I:%M %p").lstrip("0")
+        to_time_str = converted_time.strftime("%I:%M %p").lstrip("0")
+        from_date = now.strftime("%Y-%m-%d")
+        to_date = converted_time.strftime("%Y-%m-%d")
+        
+        if from_date == to_date:
+            return f"{from_time_str} {from_tz} = *{to_time_str} {to_tz}*"
+        else:
+            return f"{from_time_str} {from_tz} ({from_date}) = *{to_time_str} {to_tz} ({to_date})*"
+            
+    except Exception as e:
+        return f"Time conversion error: {e}"
+
 def parse_and_convert(text: str) -> str:
+    # Try timezone conversion first
+    timezone_result = convert_timezone(text)
+    if timezone_result:
+        return timezone_result
+    
+    # Fall back to unit conversion
     pattern = r"^([\d.,]+)\s+(.+?)\s+(?:to|in|->|→)\s+(.+)$"
     match = re.match(pattern, text.strip(), re.IGNORECASE)
     if not match:

@@ -11,6 +11,9 @@ A Telegram bot that converts between units. Send a message in the format `[value
 5 feet to meters
 1 gallon to liters
 500 ml to cups
+3pm EST to PST
+15:30 GMT to JST
+now UTC to America/New_York
 ```
 
 ## Supported Units
@@ -113,6 +116,20 @@ A Telegram bot that converts between units. Send a message in the format `[value
 | days | hours | `7 days to hours` |
 | weeks | days | `4 weeks to days` |
 | years | days | `1 year to days` |
+
+### Time Zone Conversion
+| From | To | Example |
+|------|----|---------|
+| EST | PST | `3pm EST to PST` |
+| GMT | JST | `15:30 GMT to JST` |
+| UTC | US/Eastern | `now UTC to US/Eastern` |
+| PST | CET | `9am PST to CET` |
+
+**Supported timezone formats:**
+- Common abbreviations: EST, PST, GMT, UTC, JST, IST, CET, BST, AEST
+- Full timezone names: America/New_York, Europe/London, Asia/Tokyo
+- Time formats: `3pm`, `3:30pm`, `15:30`, `15`
+- Current time: `now UTC to PST`
 
 ## Deployment (Railway)
 
