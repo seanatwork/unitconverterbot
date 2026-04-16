@@ -10,24 +10,95 @@ import pytz
 logging.basicConfig(level=logging.INFO)
 ureg = UnitRegistry()
 
-HELP_TEXT = """
-*Unit Converter Bot*
+START_TEXT = """
+👋 *Welcome to Unit Converter Bot!*
 
-Send a message like:
+Send a message in this format:
+`[value] [unit] to [unit]`
+
+*Quick examples:*
 • `100 kg to lbs`
-• `32 fahrenheit to celsius`
+• `72 fahrenheit to celsius`
 • `60 mph to kph`
-• `5 feet to meters`
-• `1 mile to km`
-• `500 ml to cups`
 • `3pm EST to PST`
-• `15:30 GMT to JST`
-• `now UTC to America/New_York`
 
-You can also use me inline in any chat:
-`@your_bot_name 100 kg to lbs`
+Type /help to see all supported units and categories.
+"""
+
+HELP_TEXT = """
+*Unit Converter Bot — Reference*
+
+*Format:* `[value] [unit] to [unit]`
+
+─────────────────────
+⚖️ *Weight*
+`100 kg to lbs` • `8 oz to grams`
+`12 stone to kg` • `1 metric_ton to lbs`
+
+📏 *Length*
+`5 feet to meters` • `1 mile to km`
+`30 cm to inches` • `100 yards to meters`
+`10 nautical_miles to km`
+
+🌡️ *Temperature*
+`72 fahrenheit to celsius`
+`100 celsius to fahrenheit`
+`300 kelvin to celsius`
+
+🚗 *Speed*
+`60 mph to kph` • `100 kph to mph`
+`20 knots to mph` • `1 mach to mph`
+
+🧪 *Volume*
+`500 ml to cups` • `1 gallon to liters`
+`2 pints to ml` • `3 tablespoons to ml`
+`8 fl_oz to ml`
+
+📐 *Area*
+`1000 sq_ft to sq_meters`
+`10 acres to hectares`
+
+⚡ *Energy & Power*
+`500 kcal to kJ` • `100 horsepower to watts`
+`1 kWh to joules` • `30 psi to bar`
+
+💾 *Data*
+`2 GB to MB` • `1 TB to GB`
+
+⏱ *Time*
+`2.5 hours to minutes` • `7 days to hours`
+`4 weeks to days` • `1 year to days`
+
+─────────────────────
+🕐 *Time Zones*
+`3pm EST to PST`
+`15:30 GMT to JST`
+`now UTC to America/New_York`
+`9am PST to CET`
+
+*Supported TZ codes:* EST, PST, CST, MST, GMT, UTC, BST, CET, JST, IST, AEST
+*Full names also work:* America/New_York, Europe/London, Asia/Tokyo
+
+─────────────────────
+*Inline mode* — use in any chat:
+`@botname 100 kg to lbs`
 
 /help — show this message
+"""
+
+FORMAT_ERROR_TEXT = """
+I didn't understand that. Use this format:
+
+`[value] [unit] to [unit]`
+
+*Examples:*
+• `100 kg to lbs`
+• `72 fahrenheit to celsius`
+• `60 mph to kph`
+• `500 ml to cups`
+• `3pm EST to PST`
+
+Type /help for all supported units.
 """
 
 UNIT_ALIASES = {
@@ -167,10 +238,12 @@ def parse_and_convert(text: str) -> str:
     if not match:
         return None
 
-    value_str, from_unit, to_unit = match.groups()
+    value_str, from_unit_raw, to_unit_raw = match.groups()
     value = float(value_str.replace(",", ""))
-    from_unit = normalize(from_unit.strip())
-    to_unit = normalize(to_unit.strip())
+    from_unit_display = from_unit_raw.strip()
+    to_unit_display = to_unit_raw.strip()
+    from_unit = normalize(from_unit_display)
+    to_unit = normalize(to_unit_display)
 
     try:
         qty = ureg.Quantity(value, from_unit)
@@ -180,7 +253,7 @@ def parse_and_convert(text: str) -> str:
             formatted = f"{result_val:,.4g}"
         else:
             formatted = f"{result_val:,.4f}".rstrip("0").rstrip(".")
-        return f"{value:g} {from_unit} = *{formatted} {to_unit}*"
+        return f"{value:g} {from_unit_display} = *{formatted} {to_unit_display}*"
     except DimensionalityError:
         return f"Cannot convert {from_unit} to {to_unit} — incompatible units."
     except UndefinedUnitError as e:
@@ -189,14 +262,35 @@ def parse_and_convert(text: str) -> str:
         return f"Error: {e}"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
+    await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT, parse_mode="Markdown")
 
+INLINE_EXAMPLES = [
+    ("hint_weight",   "⚖️ Weight",      "100 kg to lbs",            "Convert 100 kg to pounds"),
+    ("hint_temp",     "🌡️ Temperature", "72 fahrenheit to celsius",  "Convert 72°F to Celsius"),
+    ("hint_speed",    "🚗 Speed",        "60 mph to kph",             "Convert 60 mph to km/h"),
+    ("hint_volume",   "🧪 Volume",       "1 gallon to liters",        "Convert 1 gallon to liters"),
+    ("hint_length",   "📏 Length",       "5 feet to meters",          "Convert 5 feet to meters"),
+    ("hint_timezone", "🕐 Time Zone",    "3pm EST to PST",            "Convert 3 PM Eastern to Pacific"),
+    ("hint_data",     "💾 Data",         "2 GB to MB",                "Convert 2 GB to megabytes"),
+    ("hint_energy",   "⚡ Energy",       "500 kcal to kJ",            "Convert 500 kcal to kilojoules"),
+]
+
 async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.inline_query.query.strip()
     if not query:
+        results = [
+            InlineQueryResultArticle(
+                id=item_id,
+                title=f"{emoji} — e.g. {example}",
+                description=desc,
+                input_message_content=InputTextMessageContent(example),
+            )
+            for item_id, emoji, example, desc in INLINE_EXAMPLES
+        ]
+        await update.inline_query.answer(results, cache_time=0)
         return
 
     result = parse_and_convert(query)
@@ -204,9 +298,12 @@ async def inline_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results = [
             InlineQueryResultArticle(
                 id="help",
-                title="Format: 100 kg to lbs",
-                description="Type a conversion like: 60 mph to kph",
-                input_message_content=InputTextMessageContent("Format: `100 kg to lbs`", parse_mode="Markdown"),
+                title="Format: [value] [unit] to [unit]",
+                description="e.g.  100 kg to lbs  •  3pm EST to PST  •  72 fahrenheit to celsius",
+                input_message_content=InputTextMessageContent(
+                    "Format: `[value] [unit] to [unit]`\n\nExamples:\n• `100 kg to lbs`\n• `72 fahrenheit to celsius`\n• `3pm EST to PST`",
+                    parse_mode="Markdown",
+                ),
             )
         ]
     else:
@@ -226,10 +323,7 @@ async def convert(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     result = parse_and_convert(text)
     if result is None:
-        await update.message.reply_text(
-            "Format: `100 kg to lbs`\nSend /help for examples.",
-            parse_mode="Markdown",
-        )
+        await update.message.reply_text(FORMAT_ERROR_TEXT, parse_mode="Markdown")
     else:
         await update.message.reply_text(result, parse_mode="Markdown")
 
